@@ -1,0 +1,5 @@
+type modem_simulator, domain;
+type modem_simulator_exec, exec_type, vendor_file_type, file_type;
+type modem_simulator_data_file, file_type, data_file_type;
+
+init_daemon_domain(modem_simulator)

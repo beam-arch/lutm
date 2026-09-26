@@ -1,0 +1,62 @@
+# In-guest modem / UICC simulator.
+#
+# The simulator binds the VSOCK server that the Cuttlefish guest RIL
+# (libcuttlefish_rild) connects to. sim/apply.sh patches the RIL to target
+# VSOCK loopback (VMADDR_CID_LOCAL) instead of the Cuttlefish host
+# (VMADDR_CID_HOST), since both ends now live in this guest.
+
+# system/sepolicy/private/domain.te neverallows {create bind connect accept} on
+# *:vsock_socket for every domain except the ones listed in this attribute, and
+# it is an expanded (build-time) attribute. Cuttlefish exempts libcuttlefish_rild
+# and goldfish exempts hal_radio_default the same way at the same API level.
+starting_at_board_api(202504, `
+typeattribute modem_simulator unconstrained_vsock_violators;
+')
+
+allow modem_simulator self:{ socket vsock_socket unix_stream_socket } { create_socket_perms_no_ioctl getattr };
+
+# The RIL connects to the simulator's listening socket.
+allow libcuttlefish_rild modem_simulator:vsock_socket { connect read write getattr };
+
+# Control plane. The simulator serves a second, abstract local socket that
+# modem_console (run from adb shell) attaches to as a remote client, which is how
+# the emulated network is driven: injecting SMS, moving between towers, changing
+# the subscriber number. Abstract rather than a file, so no /dev/socket entry or
+# file label is involved.
+# On a full-Treble device the platform neverallow forbids coredomain (shell)
+# from initiating socket communications with a vendor domain, which is what this
+# is. The attribute below is the standard exemption for that check, matching how
+# Cuttlefish and goldfish exempt their own telephony domains. Access itself is
+# still gated by the two allow rules above: only a shell (or root shell) may
+# attach, and this is a debug/control interface, not a production data path.
+typeattribute modem_simulator socket_between_core_and_vendor_violators;
+
+allow { shell su } modem_simulator:unix_stream_socket { connectto read write getattr };
+allow modem_simulator { shell su }:unix_stream_socket { read write getattr };
+
+# Own state directory: SIM profile copy and the nvram json.
+allow modem_simulator modem_simulator_data_file:dir create_dir_perms;
+allow modem_simulator modem_simulator_data_file:file create_file_perms;
+
+# SIM profile and operator database installed under /vendor/etc/modem_simulator.
+allow modem_simulator vendor_configs_file:dir r_dir_perms;
+allow modem_simulator vendor_configs_file:file r_file_perms;
+
+# Emulated data path. The service is granted NET_ADMIN/NET_RAW in
+# modem_simulator.rc; these are the socket and ioctl counterparts, mirroring the
+# in-guest goldfish radio (hal_radio_default / goldfish_setup).
+allow modem_simulator self:capability { net_admin net_raw };
+allow modem_simulator self:{ tcp_socket udp_socket rawip_socket } { create_socket_perms getattr };
+allow modem_simulator self:netlink_route_socket { create nlmsg_write setopt bind getattr read write nlmsg_read };
+allow modem_simulator self:netlink_generic_socket create_socket_perms_no_ioctl;
+allowxperm modem_simulator self:udp_socket ioctl { SIOCGIFINDEX
+                                                  SIOCGIFFLAGS SIOCSIFFLAGS
+                                                  SIOCSIFADDR SIOCSIFNETMASK
+                                                  SIOCGIFHWADDR };
+
+# init seeds /data/misc/modem_simulator from /vendor/etc/modem_simulator. The
+# seed runs from a vendor init script, hence both domains.
+allow init modem_simulator_data_file:dir create_dir_perms;
+allow init modem_simulator_data_file:file create_file_perms;
+allow vendor_init modem_simulator_data_file:dir create_dir_perms;
+allow vendor_init modem_simulator_data_file:file create_file_perms;

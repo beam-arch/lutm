@@ -1,0 +1,11 @@
+service modem-simulator /vendor/bin/hw/modem_simulator_virtio --port=9200
+    class core
+    user radio
+    group radio
+    # NET_ADMIN/NET_RAW are granted for the emulated data path (interface and
+    # route manipulation, raw sockets). The AT/UICC emulation itself only needs
+    # the vsock server.
+    capabilities NET_ADMIN NET_RAW
+    seclabel u:r:modem_simulator:s0
+
+onrestart restart vendor.ril-daemon

@@ -1,0 +1,18 @@
+# SIM / telephony emulation properties.
+
+# NR 5G, LTE, TD-SCDMA, CDMA, EVDO, GSM and WCDMA, matching what the emulated
+# modem advertises. (Same value the AOSP emulator uses.)
+ro.telephony.default_network=33
+
+# Positive "this device has a radio" declaration: 0 == radio present.
+#
+# `ro.radio.noril` is a real AOSP property -- it is labelled
+# `telephony_config_prop` in system/sepolicy/private/property_contexts -- and
+# this tree has no reader for it, so on its own it changes nothing. It is set
+# anyway so that the virtio images never get mistaken for a Wi-Fi-only target by
+# any layer that treats a non-empty/truthy value as "no RIL".
+#
+# The value that actually brings the radio up is the bootconfig property
+# ro.boot.modem_simulator_ports (see virtio-sim-board.mk): libcuttlefish-rild
+# reads it and deliberately comes up as "no-ril" when it is empty.
+ro.radio.noril=0

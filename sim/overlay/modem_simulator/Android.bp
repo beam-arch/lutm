@@ -1,0 +1,68 @@
+//
+// In-guest modem / UICC simulator.
+//
+// The Cuttlefish modem simulator (device/google/cuttlefish/host/commands/
+// modem_simulator) is a host program, so it cannot be installed as a device
+// binary directly. sim/apply.sh copies its sources into this module directory
+// under src/ (minus the host-only main.cpp and cf_device_config.cpp, which this
+// port replaces with main_virtio.cpp and cf_device_config_virtio.cpp).
+//
+// Soong resolves `srcs` relative to the .bp's own directory, which is why the
+// sources are staged here instead of referenced in place.
+//
+package {
+    default_applicable_licenses: ["Android-Apache-2.0"],
+}
+
+cc_binary {
+    // Distinct name: Cuttlefish already defines a host module named
+    // "modem_simulator".
+    name: "modem_simulator_virtio",
+    vendor: true,
+    relative_install_path: "hw",
+    init_rc: ["modem_simulator.rc"],
+    cpp_std: "c++20",
+
+    srcs: [
+        "main_virtio.cpp",
+        "cf_device_config_virtio.cpp",
+
+        // Cuttlefish modem simulator, minus main.cpp and cf_device_config.cpp.
+        "src/host/commands/modem_simulator/call_service.cpp",
+        "src/host/commands/modem_simulator/channel_monitor.cpp",
+        "src/host/commands/modem_simulator/command_parser.cpp",
+        "src/host/commands/modem_simulator/data_service.cpp",
+        "src/host/commands/modem_simulator/misc_service.cpp",
+        "src/host/commands/modem_simulator/modem_service.cpp",
+        "src/host/commands/modem_simulator/modem_simulator.cpp",
+        "src/host/commands/modem_simulator/network_service.cpp",
+        "src/host/commands/modem_simulator/nvram_config.cpp",
+        "src/host/commands/modem_simulator/pdu_parser.cpp",
+        "src/host/commands/modem_simulator/sim_service.cpp",
+        "src/host/commands/modem_simulator/sms_service.cpp",
+        "src/host/commands/modem_simulator/stk_service.cpp",
+        "src/host/commands/modem_simulator/sup_service.cpp",
+        "src/host/commands/modem_simulator/thread_looper.cpp",
+    ],
+
+    // Sources include each other as "host/commands/modem_simulator/*.h".
+    local_include_dirs: ["src"],
+
+    // Cuttlefish sources include each other as "common/libs/.../*.h", relative
+    // to the device/google/cuttlefish root. Upstream modules get this from the
+    // "cuttlefish_base" defaults; we are outside the cuttlefish tree.
+    header_libs: ["cuttlefish_common_headers"],
+
+    shared_libs: [
+        "libbase",
+        "libcuttlefish_fs",
+        "libcuttlefish_utils",
+        "libjsoncpp",
+        "liblog",
+    ],
+    static_libs: ["libtinyxml2"],
+    cflags: [
+        "-Wall",
+        "-fexceptions",
+    ],
+}

@@ -1,0 +1,24 @@
+//
+// modem_console - control plane for the emulated SIM / SMS / network.
+//
+// A plain device binary: it only needs POSIX sockets, so it links no libraries
+// and can always run, even if something else on the device is broken. It is
+// driven from adb shell (or from a script over adb) and attaches to the in-guest
+// modem simulator's control socket.
+//
+package {
+    default_applicable_licenses: ["Android-Apache-2.0"],
+}
+
+cc_binary {
+    name: "modem_console",
+    srcs: [
+        "modem_console.cpp",
+        "sms_pdu.cpp",
+    ],
+    cpp_std: "c++20",
+    cflags: [
+        "-Wall",
+        "-Wextra",
+    ],
+}
