@@ -89,6 +89,37 @@ both the product packages and the corresponding board configuration.
 
 ## Building the images
 
+For a clean Ubuntu build host with the
+[Android build dependencies](https://source.android.com/docs/setup/start/requirements)
+installed, also install `git-lfs`, `pkg-config`, `ninja-build`, `qemu-utils`,
+`bc`, `cpio`, `rsync`, `libssl-dev`, `libelf-dev` and `dwarves`. Install the
+official `repo` launcher and configure Git's name/email, then run:
+
+```shell
+bash sim/build.sh "$HOME/android/lineage" virtio_x86_64
+# or: bash sim/build.sh "$HOME/android/lineage" virtio_arm64only
+```
+
+The helper initializes LineageOS 23.2, installs `lineage-virtio.xml` as a local
+manifest for the device dependencies, syncs, applies the overlay, runs the host
+checks, and builds both archives. `SYNC_JOBS` defaults to 8 and `BUILD_JOBS` to
+the host CPU count. Set `SKIP_SYNC=1` only when resuming an already synced build.
+It checks zip integrity and prints SHA-256 hashes, but does not boot the image
+or upload it. These are development builds using the tree's default signing
+keys, not production-signed releases.
+
+To upload the produced archives separately:
+
+```shell
+bash sim/upload-gofile.sh /path/to/UTM-VM-*.zip /path/to/*-ota.zip
+```
+
+The uploader can use `GOFILE_TOKEN` and `GOFILE_FOLDER_ID`; otherwise it creates
+a temporary guest account and a public folder per upload. It checks GoFile's
+reported size and MD5 against each local file before printing a file page and,
+when supplied by the API, its separate folder page. This is metadata verification,
+not a download check. Guest files can expire after ten days of inactivity.
+
 Apply the overlay first, then build both the bootable UTM bundle and OTA:
 
 ```shell
@@ -259,7 +290,8 @@ same exemption, which is why `modem_simulator.te` mirrors it under
 
 ## Verification status
 
-Current host checks: seven boot-wiring/application regressions and 60 PDU checks
+Current host checks: seven boot-wiring/application regressions, nine offline
+upload regressions, and 60 PDU checks
 pass via `bash sim/run-host-tests.sh`, using the bundled reference when no tree
 is supplied. Pass a synced tree explicitly to also check patch compatibility
 against its pristine Cuttlefish sources. These tests do not boot Android or

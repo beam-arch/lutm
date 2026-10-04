@@ -25,6 +25,7 @@ if [ ! -f "$MS_SOURCE/pdu_parser.cpp" ]; then
 fi
 
 python3 "$HERE/tests/boot_integration_test.py"
+python3 "$HERE/tests/upload_gofile_test.py"
 
 CXX="${CXX:-}"
 if [ -z "$CXX" ]; then
