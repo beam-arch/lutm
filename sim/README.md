@@ -91,8 +91,8 @@ both the product packages and the corresponding board configuration.
 
 For a clean Ubuntu build host with the
 [Android build dependencies](https://source.android.com/docs/setup/start/requirements)
-installed, also install `git-lfs`, `pkg-config`, `ninja-build`, `qemu-utils`,
-`bc`, `cpio`, `rsync`, `libssl-dev`, `libelf-dev` and `dwarves`. Install the
+installed, also install `git-lfs`, `pkg-config`, `ninja-build`, `python3-mako`,
+`qemu-utils`, `bc`, `cpio`, `rsync`, `libssl-dev`, `libelf-dev` and `dwarves`. Install the
 official `repo` launcher and configure Git's name/email, then run:
 
 ```shell
@@ -389,9 +389,13 @@ which is a repair inside the synced tree); otherwise check them by hand first:
    `apt install coreutils-from-gnu` (or point `/usr/bin/expr` at `/usr/bin/gnuexpr`).
    Check with `get_build_var BOARD_MESA3D_MESON_ARGS` — it must contain
    `-Dmesa-clc=system`.
-2. **`pkg-config` and `ninja` must be installed.** Mesa's meson setup needs both;
+2. **`pkg-config`, `ninja` and Python Mako must be installed.** Mesa's meson
+   setup needs them;
    the failures read `Pkg-config for machine host machine not found` and
-   `Could not detect Ninja v1.8.2 or newer`.
+   `Could not detect Ninja v1.8.2 or newer`, or
+   `Python (3.x) mako module >= 0.8.0 required to build mesa`.
+   Install `pkg-config ninja-build python3-mako` on Ubuntu. The preflight checks
+   these before compilation.
 3. **`prebuilts/bootmgr`'s bundled glibc is broken on modern hosts.**
    `build/tasks/10-bootmgr-defs.mk` runs the prebuilt mtools/xorriso/grub tools
    through the *bundled* loader

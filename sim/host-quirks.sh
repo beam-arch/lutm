@@ -69,6 +69,12 @@ for tool in pkg-config ninja; do
     fi
 done
 
+if python3 -c 'import mako; from mako.template import Template; assert tuple(map(int, mako.__version__.split(".")[:2])) >= (0, 8)' >/dev/null 2>&1; then
+    ok "Python Mako >= 0.8.0"
+else
+    bad "Python Mako >= 0.8.0 not found -- apt install python3-mako"
+fi
+
 # ---------------------------------------------------------------------------
 # 3. prebuilts/bootmgr's bundled glibc
 #
