@@ -60,7 +60,7 @@ std::string ControlSocketFromArgs(int argc, char** argv) {
 }  // namespace
 
 int main(int argc, char** argv) {
-    android::base::InitLogging(argv, android::base::StderrLogger);
+    android::base::InitLogging(argv);
 
     // The RIL can close the connection on reboot; don't take the process down.
     signal(SIGPIPE, SIG_IGN);

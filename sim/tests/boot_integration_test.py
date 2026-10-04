@@ -82,6 +82,11 @@ class BootWiringTest(unittest.TestCase):
             initialize.index("channel_monitor_->Start();"),
         )
 
+    def test_guest_startup_errors_use_android_logging(self):
+        main = (OVERLAY / "modem_simulator/main_virtio.cpp").read_text()
+        self.assertIn("android::base::InitLogging(argv);", main)
+        self.assertNotIn("android::base::StderrLogger", main)
+
 
 class ApplyTest(unittest.TestCase):
     def setUp(self):

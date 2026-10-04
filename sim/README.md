@@ -167,9 +167,9 @@ section below.
 ## Verifying at runtime
 
 ```shell
-adb shell getprop ro.boot.modem_simulator_ports        # 9200
+adb shell 'cat /proc/bootconfig /proc/cmdline | grep modem_simulator_ports'
 adb shell getprop init.svc.modem-simulator             # running
-adb shell getprop init.svc.vendor.ril-daemon           # running
+adb shell 'ps -A -Z | grep libcuttlefish-rild'
 adb shell dumpsys telephony.registry | head
 adb shell service list | grep android.hardware.radio
 adb shell getprop gsm.operator.alpha                   # non-empty
@@ -177,10 +177,13 @@ adb shell getprop gsm.operator.alpha                   # non-empty
 
 ### If the services or Android tools are missing
 
-`ro.boot.modem_simulator_ports=9200` only proves that bootconfig was supplied.
-It does not prove the modem binary, its init service, or the radio APEX was
-installed or started. Blank `init.svc.*` values mean no service state has been
-reported; a declared service that never successfully starts can also be blank.
+The bootconfig or command line must contain `modem_simulator_ports=9200`, but
+that does not prove the modem binary, its init service, or the radio APEX was
+installed or started. On these full-Treble images, SELinux denies `shell` reads
+of `ro.boot.modem_simulator_ports` (a vendor-internal property) and the default
+`init.svc.vendor.*` properties. Blank `getprop` output for those is not evidence
+that the port is missing or the RIL is stopped: use `/proc/bootconfig` and `ps`
+instead. A readable service state of `restarting` does confirm a failing service.
 
 Select the intended ADB transport explicitly (replace the serial as needed):
 
@@ -195,6 +198,8 @@ adb -s emulator-5554 shell '
     /vendor/bin/hw/modem_simulator_virtio /vendor/etc/init/modem_simulator.rc \
     /vendor/etc/init/init.virtio.sim.rc \
     /apex/com.google.cf.rild/bin/hw/libcuttlefish-rild
+  cat /proc/bootconfig /proc/cmdline | grep modem_simulator_ports
+  ps -A -Z | grep libcuttlefish-rild
 '
 ```
 
@@ -213,6 +218,17 @@ adb shell modem_console --socket modem_simulator_console_ raw 'AT+CPIN?'
 The trailing underscore is intentional. This repairs the diagnostic connection,
 not SIM detection: `+CPIN: READY` shows the simulator loaded its UICC profile,
 but the radio HAL and Android subscription state still need to be checked.
+
+If `modem-simulator` is restarting, collect init, linker and SELinux errors:
+
+```shell
+adb shell 'logcat -b all -d -t 1500 | grep -Ei "modem-simulator|modem_simulator_virtio|libcuttlefish-rild|avc: denied|Fatal signal|CANNOT LINK EXECUTABLE" | tail -80'
+```
+
+The first shared archives routed simulator logs to stderr, which init discards
+for this service. The source now uses Android's default logd logger so socket
+and profile errors appear in logcat. This observability fix does not establish
+the cause of a crash in an older image, or prove that SIM detection works.
 
 If only the SIM components are missing, check `get_build_var TARGET_NO_TELEPHONY`
 and `get_build_var PRODUCT_PACKAGES` in the build tree, then rebuild
@@ -301,7 +317,7 @@ same exemption, which is why `modem_simulator.te` mirrors it under
 
 ## Verification status
 
-Current host checks: seven boot-wiring/application regressions, nine offline
+Current host checks: eight boot-wiring/application regressions, nine offline
 upload regressions, 60 PDU checks, and a real-socket console regression covering
 the default, custom and maximum-length abstract socket names
 pass via `bash sim/run-host-tests.sh`, using the bundled reference when no tree
