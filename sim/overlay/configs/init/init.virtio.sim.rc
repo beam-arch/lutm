@@ -1,14 +1,14 @@
 # SIM / telephony emulation init actions.
 
 on post-fs-data
-    mkdir /data/misc/modem_simulator 0770 radio radio
-    chown radio radio /data/misc/modem_simulator
-    chmod 0770 /data/misc/modem_simulator
+    mkdir /data/vendor/modem_simulator 0770 radio radio
+    chown radio radio /data/vendor/modem_simulator
+    chmod 0770 /data/vendor/modem_simulator
 
-    copy /vendor/etc/modem_simulator/files/iccprofile_for_sim0.xml /data/misc/modem_simulator/iccprofile_for_sim0.xml
-    chown radio radio /data/misc/modem_simulator/iccprofile_for_sim0.xml
-    chmod 0640 /data/misc/modem_simulator/iccprofile_for_sim0.xml
+    copy /vendor/etc/modem_simulator/files/iccprofile_for_sim0.xml /data/vendor/modem_simulator/iccprofile_for_sim0.xml
+    chown radio radio /data/vendor/modem_simulator/iccprofile_for_sim0.xml
+    chmod 0640 /data/vendor/modem_simulator/iccprofile_for_sim0.xml
 
 # The RIL retries until the newly started modem is listening.
-on property:init.svc.modem-simulator=running
+on property:init.svc.vendor.modem-simulator=running
     start vendor.ril-daemon

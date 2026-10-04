@@ -6,17 +6,19 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 
 
 SIM = Path(__file__).resolve().parents[1]
 OVERLAY = SIM / "overlay"
 
 
-def build_config(no_telephony="false"):
+def build_config(no_telephony="false", package_overlays=""):
     with tempfile.TemporaryDirectory() as directory:
         makefile = Path(directory) / "config.mk"
         makefile.write_text(
             f"TARGET_NO_TELEPHONY := {no_telephony}\n"
+            f"PRODUCT_PACKAGE_OVERLAYS := {package_overlays}\n"
             "TARGET_COPY_OUT_VENDOR := vendor\n"
             "SRC_TARGET_DIR := build/target\n"
             "inherit-product =\n"
@@ -28,6 +30,7 @@ def build_config(no_telephony="false"):
             "'copies=$(strip $(PRODUCT_COPY_FILES))' "
             "'bootconfig=$(strip $(BOARD_BOOTCONFIG))' "
             "'properties=$(strip $(TARGET_VENDOR_PROP))' "
+            "'overlays=$(strip $(PRODUCT_PACKAGE_OVERLAYS))' "
             "'policy=$(strip $(BOARD_VENDOR_SEPOLICY_DIRS))'\n"
         )
         output = subprocess.check_output(
@@ -65,6 +68,22 @@ class BootWiringTest(unittest.TestCase):
         for key, value in build_config("true").items():
             self.assertEqual(value, "", key)
 
+    def test_one_sim_overrides_the_wifi_only_framework_defaults(self):
+        inherited = "vendor/lineage/overlay/wifionly"
+        config = build_config(package_overlays=inherited)
+        self.assertEqual(
+            config["overlays"].split(),
+            ["device/virt/virtio-common/framework-overlay", inherited],
+        )
+        resources = ET.parse(
+            OVERLAY / "framework-overlay/frameworks/base/core/res/res/values/config.xml"
+        ).getroot()
+        values = {item.get("name"): item.text for item in resources}
+        self.assertEqual(values["config_num_physical_slots"], "1")
+        for capability in ("voice", "sms", "mobile_data"):
+            self.assertEqual(values[f"config_{capability}_capable"], "true")
+        self.assertEqual(build_config("true", inherited)["overlays"], inherited)
+
     def test_monitor_starts_after_service_registration(self):
         source = SIM / "reference/modem_simulator/host/commands/modem_simulator"
         monitor = (source / "channel_monitor.cpp").read_text()
@@ -86,6 +105,35 @@ class BootWiringTest(unittest.TestCase):
         main = (OVERLAY / "modem_simulator/main_virtio.cpp").read_text()
         self.assertIn("android::base::InitLogging(argv);", main)
         self.assertNotIn("android::base::StderrLogger", main)
+
+    def test_modem_can_listen_and_accept_ril_connections(self):
+        policy = (OVERLAY / "sepolicy/vendor-sim/modem_simulator.te").read_text()
+        self.assertIn(
+            "allow modem_simulator self:vsock_socket { listen accept };", policy
+        )
+
+    def test_vendor_init_uses_a_vendor_service_state_trigger(self):
+        service = (OVERLAY / "modem_simulator/modem_simulator.rc").read_text()
+        actions = (OVERLAY / "configs/init/init.virtio.sim.rc").read_text()
+        self.assertIn("service vendor.modem-simulator ", service)
+        self.assertIn("on property:init.svc.vendor.modem-simulator=running", actions)
+        self.assertNotIn("on property:init.svc.modem-simulator=running", actions)
+
+    def test_writable_modem_state_stays_in_vendor_data(self):
+        directory = "/data/vendor/modem_simulator"
+        actions = (OVERLAY / "configs/init/init.virtio.sim.rc").read_text()
+        config = (OVERLAY / "modem_simulator/cf_device_config_virtio.cpp").read_text()
+        labels = (OVERLAY / "sepolicy/vendor-sim/file_contexts").read_text()
+        types = (OVERLAY / "sepolicy/vendor-sim/file.te").read_text()
+        policy = (OVERLAY / "sepolicy/vendor-sim/modem_simulator.te").read_text()
+        self.assertIn(f"mkdir {directory} 0770 radio radio", actions)
+        self.assertIn(f'kModemDataDir[] = "{directory}/"', config)
+        self.assertIn(f"{directory}(/.*)?", labels)
+        self.assertIn(
+            "type modem_simulator_data_file, file_type, data_file_type, vendor_data_file_type;",
+            types,
+        )
+        self.assertIn("allow modem_simulator vendor_data_file:dir search;", policy)
 
 
 class ApplyTest(unittest.TestCase):

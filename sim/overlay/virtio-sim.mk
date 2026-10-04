@@ -8,6 +8,9 @@
 
 ifneq ($(TARGET_NO_TELEPHONY),true)
 
+# Override the inherited Wi-Fi-only resources before lower-priority overlays.
+PRODUCT_PACKAGE_OVERLAYS := device/virt/virtio-common/framework-overlay $(PRODUCT_PACKAGE_OVERLAYS)
+
 # Soong namespace for the Cuttlefish guest RIL libraries we build against.
 PRODUCT_SOONG_NAMESPACES += device/google/cuttlefish
 
@@ -30,7 +33,7 @@ PRODUCT_PACKAGES += modem_console
 
 # Seed the simulator with a SIM profile and operator database. These are the
 # Cuttlefish prebuilts, installed to /vendor/etc/modem_simulator/files/; init
-# copies them into /data/misc/modem_simulator on boot.
+# copies them into /data/vendor/modem_simulator on boot.
 PRODUCT_PACKAGES += \
     iccprofile_for_sim0.xml \
     iccprofile_for_sim0_for_CtsCarrierApiTestCases.xml \

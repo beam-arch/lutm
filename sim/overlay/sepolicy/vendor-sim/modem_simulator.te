@@ -14,6 +14,7 @@ typeattribute modem_simulator unconstrained_vsock_violators;
 ')
 
 allow modem_simulator self:{ socket vsock_socket unix_stream_socket } { create_socket_perms_no_ioctl getattr };
+allow modem_simulator self:vsock_socket { listen accept };
 
 # The RIL connects to the simulator's listening socket.
 allow libcuttlefish_rild modem_simulator:vsock_socket { connect read write getattr };
@@ -35,6 +36,7 @@ allow { shell su } modem_simulator:unix_stream_socket { connectto read write get
 allow modem_simulator { shell su }:unix_stream_socket { read write getattr };
 
 # Own state directory: SIM profile copy and the nvram json.
+allow modem_simulator vendor_data_file:dir search;
 allow modem_simulator modem_simulator_data_file:dir create_dir_perms;
 allow modem_simulator modem_simulator_data_file:file create_file_perms;
 
@@ -54,7 +56,7 @@ allowxperm modem_simulator self:udp_socket ioctl { SIOCGIFINDEX
                                                   SIOCSIFADDR SIOCSIFNETMASK
                                                   SIOCGIFHWADDR };
 
-# init seeds /data/misc/modem_simulator from /vendor/etc/modem_simulator. The
+# init seeds /data/vendor/modem_simulator from /vendor/etc/modem_simulator. The
 # seed runs from a vendor init script, hence both domains.
 allow init modem_simulator_data_file:dir create_dir_perms;
 allow init modem_simulator_data_file:file create_file_perms;

@@ -49,8 +49,10 @@ before `breakfast`. This checkout does not include a top-level `build.sh`.
 
 1. Copies this overlay into `device/virt/virtio-common`:
    - `virtio-sim.mk` / `virtio-sim-board.mk` — product + board config
+   - `framework-overlay/*` — one physical SIM slot and telephony capability
+     resources, ahead of the inherited LineageOS Wi-Fi-only overlay
    - `configs/init/init.virtio.sim.rc` — installed at `/vendor/etc/init/` to seed
-     `/data/misc/modem_simulator`; init does not recursively import `etc/init/hw/`
+     `/data/vendor/modem_simulator`; init does not recursively import `etc/init/hw/`
    - `configs/properties/vendor.sim.prop` — telephony properties
    - `sepolicy/vendor-sim/*` — SELinux for the simulator, plus the
      `ro.boot.modem_simulator_ports` property type the Cuttlefish RIL policy
@@ -153,8 +155,8 @@ section below.
 
 * `androidboot.modem_simulator_ports=9200` is added to `BOARD_BOOTCONFIG`, so the
   guest RIL reads `ro.boot.modem_simulator_ports=9200`.
-* `init.virtio.sim.rc` seeds `/data/misc/modem_simulator` during `post-fs-data`.
-* The `modem-simulator` init service starts in class `core` and binds a vsock
+* `init.virtio.sim.rc` seeds `/data/vendor/modem_simulator` during `post-fs-data`.
+* The `vendor.modem-simulator` init service starts in class `core` and binds a vsock
   server on port 9200. It registers all modem services before handling commands.
   `init.virtio.sim.rc` also starts `vendor.ril-daemon` when the modem process
   reports `running`; this process state is not a socket-readiness signal.
@@ -168,7 +170,7 @@ section below.
 
 ```shell
 adb shell 'cat /proc/bootconfig /proc/cmdline | grep modem_simulator_ports'
-adb shell getprop init.svc.modem-simulator             # running
+adb shell 'ps -A -Z | grep modem_simulator'
 adb shell 'ps -A -Z | grep libcuttlefish-rild'
 adb shell dumpsys telephony.registry | head
 adb shell service list | grep android.hardware.radio
@@ -191,7 +193,8 @@ Select the intended ADB transport explicitly (replace the serial as needed):
 adb -s emulator-5554 shell '
   echo "PATH=$PATH"
   for p in ro.bootmode ro.build.fingerprint sys.boot_completed init.svc.zygote \
-      init.svc.modem-simulator init.svc.vendor.ril-daemon; do
+      init.svc.modem-simulator init.svc.vendor.modem-simulator \
+      init.svc.vendor.ril-daemon; do
     printf "%s=" "$p"; /system/bin/getprop "$p"
   done
   ls -l /system/bin/dumpsys /system/bin/service /system/bin/modem_console \
@@ -199,7 +202,7 @@ adb -s emulator-5554 shell '
     /vendor/etc/init/init.virtio.sim.rc \
     /apex/com.google.cf.rild/bin/hw/libcuttlefish-rild
   cat /proc/bootconfig /proc/cmdline | grep modem_simulator_ports
-  ps -A -Z | grep libcuttlefish-rild
+  ps -A -Z | grep -E 'libcuttlefish-rild|modem_simulator'
 '
 ```
 
@@ -229,6 +232,27 @@ The first shared archives routed simulator logs to stderr, which init discards
 for this service. The source now uses Android's default logd logger so socket
 and profile errors appear in logcat. This observability fix does not establish
 the cause of a crash in an older image, or prove that SIM detection works.
+
+Runtime testing of the first x86_64 archive reproduced the modem restart loop:
+SELinux denied `listen` on its VSOCK socket. Adding only `listen` and `accept`
+to the test copy's policy got the modem past that loop with enforcement retained.
+The same run exposed a rejected vendor-init trigger for the unexported
+`init.svc.modem-simulator` property and permission failures seeding `/data/misc`.
+The source now names the service `vendor.modem-simulator` and keeps its state
+under `/data/vendor/modem_simulator` with a vendor data type.
+
+Once the modem was running, the inherited Wi-Fi-only overlay still declared
+zero physical SIM slots. `UiccController` then crashed when the modem reported
+slot 0. The SIM-specific framework overlay now declares one slot and enables
+the voice, SMS and mobile-data capability flags. Its product-overlay path is
+prepended so the Wi-Fi-only values cannot override it.
+
+On a disposable x86_64 copy of the shared archive, the socket-policy repair
+and these resource overrides were boot-tested with SELinux enforcing:
+`AT+CPIN?` returned `READY`, `gsm.sim.state` reached `LOADED`, an active
+subscription appeared, and the phone service stopped crash-looping. This test
+does not verify a rebuilt ARM64 image or the source's service/data-path changes
+together; the originally shared archives predate these repairs.
 
 If only the SIM components are missing, check `get_build_var TARGET_NO_TELEPHONY`
 and `get_build_var PRODUCT_PACKAGES` in the build tree, then rebuild
@@ -317,7 +341,7 @@ same exemption, which is why `modem_simulator.te` mirrors it under
 
 ## Verification status
 
-Current host checks: eight boot-wiring/application regressions, nine offline
+Current host checks: twelve boot-wiring/application regressions, nine offline
 upload regressions, 60 PDU checks, and a real-socket console regression covering
 the default, custom and maximum-length abstract socket names
 pass via `bash sim/run-host-tests.sh`, using the bundled reference when no tree

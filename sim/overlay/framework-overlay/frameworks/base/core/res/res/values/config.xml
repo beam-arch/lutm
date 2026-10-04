@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <integer name="config_num_physical_slots">1</integer>
+    <bool name="config_voice_capable">true</bool>
+    <bool name="config_sms_capable">true</bool>
+    <bool name="config_mobile_data_capable">true</bool>
+</resources>
