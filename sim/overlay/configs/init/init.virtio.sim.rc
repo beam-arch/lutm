@@ -9,6 +9,6 @@ on post-fs-data
     chown radio radio /data/misc/modem_simulator/iccprofile_for_sim0.xml
     chmod 0640 /data/misc/modem_simulator/iccprofile_for_sim0.xml
 
-# Make sure the RIL comes up only once the simulator is serving the VSOCK port.
+# The RIL retries until the newly started modem is listening.
 on property:init.svc.modem-simulator=running
     start vendor.ril-daemon

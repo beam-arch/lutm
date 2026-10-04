@@ -85,8 +85,10 @@ ChannelMonitor::ChannelMonitor(ModemSimulator& modem, SharedFD server)
   if (!SharedFD::Pipe(&read_pipe_, &write_pipe_)) {
     LOG(ERROR) << "Unable to create pipe, ignore";
   }
+}
 
-  if (server_->IsOpen()) {
+void ChannelMonitor::Start() {
+  if (server_->IsOpen() && !monitor_thread_.joinable()) {
     monitor_thread_ = std::thread([this]() { MonitorLoop(); });
   }
 }

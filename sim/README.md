@@ -1,10 +1,10 @@
 # SIM / telephony emulation for LineageOS-on-QEMU (virtio)
 
-This directory adds a **guest-side, self-contained** emulated physical SIM to the
-`virtio_x86_64` / `virtio_arm64only` builds so that Android believes a real
-physical SIM is inserted and brings the full telephony stack up
-(SIM + carrier, voice, SMS, data; IMS/RCS surfaces exist because the HAL
-implements the IMS interfaces).
+This directory adds a **guest-side, self-contained** modem and simulated
+physical SIM to the `virtio_x86_64` / `virtio_arm64only` builds. It is intended
+to expose a UICC and emulated carrier, voice, SMS and data state to Android.
+It does not connect to a real cellular network or provide working carrier
+IMS/RCS merely by implementing radio HAL interfaces.
 
 Nothing is required from the host/QEMU command line and nothing is required from
 UTM: the modem lives entirely inside the guest image.
@@ -44,11 +44,13 @@ vsock **loopback** (`VMADDR_CID_LOCAL`) instead.
 
 ## What `apply.sh` does
 
-Run automatically by `build.sh` right after `repo sync`, before `breakfast`:
+Run `bash /path/to/lutm/sim/apply.sh /path/to/android/lineage` after `repo sync`,
+before `breakfast`. This checkout does not include a top-level `build.sh`.
 
 1. Copies this overlay into `device/virt/virtio-common`:
    - `virtio-sim.mk` / `virtio-sim-board.mk` — product + board config
-   - `configs/init/init.virtio.sim.rc` — seeds `/data/misc/modem_simulator`
+   - `configs/init/init.virtio.sim.rc` — installed at `/vendor/etc/init/` to seed
+     `/data/misc/modem_simulator`; init does not recursively import `etc/init/hw/`
    - `configs/properties/vendor.sim.prop` — telephony properties
    - `sepolicy/vendor-sim/*` — SELinux for the simulator, plus the
      `ro.boot.modem_simulator_ports` property type the Cuttlefish RIL policy
@@ -63,8 +65,9 @@ Run automatically by `build.sh` right after `repo sync`, before `breakfast`:
 3. Stages the Cuttlefish simulator sources into `modem_simulator/src/`, minus the
    host-only `main.cpp` / `cf_device_config.cpp`. Soong resolves `srcs` relative
    to the `.bp`'s own directory, so they cannot be referenced in place.
-4. Patches that staged copy with `sim/patch_modem_simulator.py` (18 exact-match
+4. Patches that staged copy with `sim/patch_modem_simulator.py` (21 exact-match
    edits; re-applied from pristine sources on every run):
+   - deferred command handling until the SIM/network services are registered;
    - a control-plane broadcast, so a console sees the SMS the device sends and
      the delivery reports that come back;
    - SMS-DELIVER parsing in `PDUParser`, which upstream never needed because a
@@ -80,10 +83,13 @@ Run automatically by `build.sh` right after `repo sync`, before `breakfast`:
 5. Rewrites the guest RIL's vsock target from `VMADDR_CID_HOST` to
    `VMADDR_CID_LOCAL` so the RIL talks to the in-guest simulator.
 
+Missing device/Cuttlefish sources or an unrecognized RIL transport are errors,
+not warnings followed by apparent success. `TARGET_NO_TELEPHONY=true` disables
+both the product packages and the corresponding board configuration.
+
 ## Building the images
 
-Apply the overlay first (`sim/apply.sh`), then build the same targets `build.sh`
-uses:
+Apply the overlay first, then build both the bootable UTM bundle and OTA:
 
 ```shell
 breakfast virtio_x86_64 user          # or virtio_arm64only
@@ -109,20 +115,23 @@ out/target/product/<product>/VirtualMachine/UTM/<name>.utm/Data/{vda.qcow2,vdb.q
 system/vendor/product/system_ext/odm, so it is also where the emulated SIM ends
 up. `vdb.qcow2` is the 16 GiB empty userdata disk.
 
-Run `sim/host-quirks.sh --fix` before the first build — see the environment
+Run `bash sim/host-quirks.sh --fix` before the first build — see the environment
 section below.
 
 ## Boot flow
 
 * `androidboot.modem_simulator_ports=9200` is added to `BOARD_BOOTCONFIG`, so the
   guest RIL reads `ro.boot.modem_simulator_ports=9200`.
-* `modem_simulator` starts in init class `core` and binds a vsock server on port
-  9200; `init.virtio.sim.rc` also starts `vendor.ril-daemon` once the simulator
-  reports `running`.
+* `init.virtio.sim.rc` seeds `/data/misc/modem_simulator` during `post-fs-data`.
+* The `modem-simulator` init service starts in class `core` and binds a vsock
+  server on port 9200. It registers all modem services before handling commands.
+  `init.virtio.sim.rc` also starts `vendor.ril-daemon` when the modem process
+  reports `running`; this process state is not a socket-readiness signal.
 * `vendor.ril-daemon` (via `libcuttlefish-ril-2.so`) connects to the simulator
   over vsock loopback and registers the AIDL radio HAL. If it loses the race it
   retries every 10s.
-* Android sees a SIM, a registered network, and a mobile data connection.
+* Expected result: Android sees a SIM, a registered emulated network, and a
+  simulated mobile data connection. This still needs guest-side verification.
 
 ## Verifying at runtime
 
@@ -134,6 +143,43 @@ adb shell dumpsys telephony.registry | head
 adb shell service list | grep android.hardware.radio
 adb shell getprop gsm.operator.alpha                   # non-empty
 ```
+
+### If the services or Android tools are missing
+
+`ro.boot.modem_simulator_ports=9200` only proves that bootconfig was supplied.
+It does not prove the modem binary, its init service, or the radio APEX was
+installed or started. Blank `init.svc.*` values mean no service state has been
+reported; a declared service that never successfully starts can also be blank.
+
+Select the intended ADB transport explicitly (replace the serial as needed):
+
+```shell
+adb -s emulator-5554 shell '
+  echo "PATH=$PATH"
+  for p in ro.bootmode ro.build.fingerprint sys.boot_completed init.svc.zygote \
+      init.svc.modem-simulator init.svc.vendor.ril-daemon; do
+    printf "%s=" "$p"; /system/bin/getprop "$p"
+  done
+  ls -l /system/bin/dumpsys /system/bin/service /system/bin/modem_console \
+    /vendor/bin/hw/modem_simulator_virtio /vendor/etc/init/modem_simulator.rc \
+    /vendor/etc/init/init.virtio.sim.rc \
+    /apex/com.google.cf.rild/bin/hw/libcuttlefish-rild
+'
+```
+
+Missing `dumpsys` and `service` is not a SIM-protocol failure: check for a
+recovery/minimal environment, an unexpected image, or a PATH/access problem.
+If the absolute paths exist, try `/system/bin/dumpsys` and `/system/bin/service`.
+The `emulator-5554` serial alone does not establish which image is running.
+
+If only the SIM components are missing, check `get_build_var TARGET_NO_TELEPHONY`
+and `get_build_var PRODUCT_PACKAGES` in the build tree, then rebuild
+`m vm-utm-zip otapackage` and boot the newly generated bundle/disk. Building an
+individual module does not update an already imported UTM VM. If the files are
+present but services fail, inspect init/RIL logs and SELinux denials before
+changing policy. The SIM can fall back to its vendor profile even if the data
+copy is absent, so the former init-path bug alone does not explain every
+"no SIM" report.
 
 ## Driving the emulated network: `modem_console`
 
@@ -213,7 +259,16 @@ same exemption, which is why `modem_simulator.te` mirrors it under
 
 ## Verification status
 
-Verified by real builds against a synced LineageOS 23.2 tree:
+Current host checks: seven boot-wiring/application regressions and 60 PDU checks
+pass via `bash sim/run-host-tests.sh`, using the bundled reference when no tree
+is supplied. Pass a synced tree explicitly to also check patch compatibility
+against its pristine Cuttlefish sources. These tests do not boot Android or
+compile the full device modem/radio stack.
+
+The original snapshot records the following build-only results against a synced
+LineageOS 23.2 tree. They have **not** been re-run for the startup fixes above;
+the image contents below describe that older baseline, including the unimported
+`/vendor/etc/init/hw/init.virtio.sim.rc`. The fixed path requires a rebuilt image.
 
 | Check | Target | Result |
 |---|---|---|

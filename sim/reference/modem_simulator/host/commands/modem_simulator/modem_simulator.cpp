@@ -53,6 +53,8 @@ void ModemSimulator::Initialize(
   channel_monitor_ = std::move(channel_monitor);
   LoadNvramConfig();
   RegisterModemService();
+  // Accept commands only after the service registry is complete.
+  channel_monitor_->Start();
 }
 
 void ModemSimulator::RegisterModemService() {

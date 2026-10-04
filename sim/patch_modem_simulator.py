@@ -8,6 +8,7 @@ lacks on a standalone device is the control plane Cuttlefish drives it with from
 the host. These patches add exactly that, plus the fidelity fixes needed for
 injected traffic to be indistinguishable from real traffic:
 
+  * deferred command handling until the modem services are fully registered
   * a broadcast channel, so a control-plane client sees what the device sends
   * SMS-DELIVER parsing, so a genuine network delivery can be validated (and
     therefore delivered verbatim, service centre address and time stamp intact)
@@ -28,6 +29,69 @@ EDITS = []
 
 def edit(path, old, new, what):
     EDITS.append({"path": path, "old": old, "new": new, "what": what})
+
+
+# ---------------------------------------------------------------------------
+# 0. Register services before accepting commands
+# ---------------------------------------------------------------------------
+
+edit(
+    "channel_monitor.h",
+    """  ChannelMonitor(ModemSimulator& modem, cuttlefish::SharedFD server);
+  ~ChannelMonitor();
+""",
+    """  ChannelMonitor(ModemSimulator& modem, cuttlefish::SharedFD server);
+  ~ChannelMonitor();
+  void Start();
+""",
+    "channel_monitor.h: expose deferred monitor startup",
+)
+
+edit(
+    "channel_monitor.cpp",
+    """ChannelMonitor::ChannelMonitor(ModemSimulator& modem, SharedFD server)
+    : modem_(modem), server_(std::move(server)) {
+  if (!SharedFD::Pipe(&read_pipe_, &write_pipe_)) {
+    LOG(ERROR) << "Unable to create pipe, ignore";
+  }
+
+  if (server_->IsOpen()) {
+    monitor_thread_ = std::thread([this]() { MonitorLoop(); });
+  }
+}
+""",
+    """ChannelMonitor::ChannelMonitor(ModemSimulator& modem, SharedFD server)
+    : modem_(modem), server_(std::move(server)) {
+  if (!SharedFD::Pipe(&read_pipe_, &write_pipe_)) {
+    LOG(ERROR) << "Unable to create pipe, ignore";
+  }
+}
+
+void ChannelMonitor::Start() {
+  if (server_->IsOpen() && !monitor_thread_.joinable()) {
+    monitor_thread_ = std::thread([this]() { MonitorLoop(); });
+  }
+}
+""",
+    "channel_monitor.cpp: do not dispatch commands during construction",
+)
+
+edit(
+    "modem_simulator.cpp",
+    """  channel_monitor_ = std::move(channel_monitor);
+  LoadNvramConfig();
+  RegisterModemService();
+}
+""",
+    """  channel_monitor_ = std::move(channel_monitor);
+  LoadNvramConfig();
+  RegisterModemService();
+  // Accept commands only after the service registry is complete.
+  channel_monitor_->Start();
+}
+""",
+    "modem_simulator.cpp: start the monitor after registering services",
+)
 
 
 # ---------------------------------------------------------------------------

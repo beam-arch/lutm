@@ -36,7 +36,7 @@ PRODUCT_PACKAGES += \
     iccprofile_for_sim0_for_CtsCarrierApiTestCases.xml \
     numeric_operator.xml
 
-# Init actions: seed /data and start ordering for vendor.ril-daemon.
+# Init does not recurse into etc/init/hw; keep these actions at etc/init/.
 PRODUCT_COPY_FILES += \
-    device/virt/virtio-common/configs/init/init.virtio.sim.rc:$(TARGET_COPY_OUT_VENDOR)/etc/init/hw/init.virtio.sim.rc
+    device/virt/virtio-common/configs/init/init.virtio.sim.rc:$(TARGET_COPY_OUT_VENDOR)/etc/init/init.virtio.sim.rc
 endif
