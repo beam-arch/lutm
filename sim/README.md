@@ -202,7 +202,7 @@ adb -s emulator-5554 shell '
     /vendor/etc/init/init.virtio.sim.rc \
     /apex/com.google.cf.rild/bin/hw/libcuttlefish-rild
   cat /proc/bootconfig /proc/cmdline | grep modem_simulator_ports
-  ps -A -Z | grep -E 'libcuttlefish-rild|modem_simulator'
+  ps -A -Z | grep -E "libcuttlefish-rild|modem_simulator"
 '
 ```
 
@@ -251,8 +251,10 @@ On a disposable x86_64 copy of the shared archive, the socket-policy repair
 and these resource overrides were boot-tested with SELinux enforcing:
 `AT+CPIN?` returned `READY`, `gsm.sim.state` reached `LOADED`, an active
 subscription appeared, and the phone service stopped crash-looping. This test
-does not verify a rebuilt ARM64 image or the source's service/data-path changes
-together; the originally shared archives predate these repairs.
+also passed on fresh userdata: Language → Next advanced to Date & time without
+the missing-SIM page. It does not verify a rebuilt ARM64 image or the source's
+service/data-path changes together; the originally shared archives predate
+these repairs.
 
 If only the SIM components are missing, check `get_build_var TARGET_NO_TELEPHONY`
 and `get_build_var PRODUCT_PACKAGES` in the build tree, then rebuild
