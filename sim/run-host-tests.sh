@@ -64,3 +64,11 @@ echo "run-host-tests.sh: compiler: $CXX"
     "$SRC/pdu_parser.cpp"
 
 "$OUT/pdu_test"
+
+"$CXX" -std=c++20 -Wall -Wextra -O1 \
+    -I "$HERE/overlay/modem_console" \
+    -o "$OUT/modem_console" \
+    "$HERE/overlay/modem_console/modem_console.cpp" \
+    "$HERE/overlay/modem_console/sms_pdu.cpp"
+
+python3 "$HERE/tests/console_transport_test.py" "$OUT/modem_console"

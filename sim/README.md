@@ -203,6 +203,17 @@ recovery/minimal environment, an unexpected image, or a PATH/access problem.
 If the absolute paths exist, try `/system/bin/dumpsys` and `/system/bin/service`.
 The `emulator-5554` serial alone does not establish which image is running.
 
+The first 20261004 archives shared before the console socket-length fix truncate
+the abstract socket name by one byte. On those images only, compensate with:
+
+```shell
+adb shell modem_console --socket modem_simulator_console_ raw 'AT+CPIN?'
+```
+
+The trailing underscore is intentional. This repairs the diagnostic connection,
+not SIM detection: `+CPIN: READY` shows the simulator loaded its UICC profile,
+but the radio HAL and Android subscription state still need to be checked.
+
 If only the SIM components are missing, check `get_build_var TARGET_NO_TELEPHONY`
 and `get_build_var PRODUCT_PACKAGES` in the build tree, then rebuild
 `m vm-utm-zip otapackage` and boot the newly generated bundle/disk. Building an
@@ -291,7 +302,8 @@ same exemption, which is why `modem_simulator.te` mirrors it under
 ## Verification status
 
 Current host checks: seven boot-wiring/application regressions, nine offline
-upload regressions, and 60 PDU checks
+upload regressions, 60 PDU checks, and a real-socket console regression covering
+the default, custom and maximum-length abstract socket names
 pass via `bash sim/run-host-tests.sh`, using the bundled reference when no tree
 is supplied. Pass a synced tree explicitly to also check patch compatibility
 against its pristine Cuttlefish sources. These tests do not boot Android or
