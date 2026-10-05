@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Run the modem console's host-side tests.
+# Run the boot-wiring regressions and modem console's host-side tests.
 #
 # Usage: sim/run-host-tests.sh [path-to-android-tree]
 #
@@ -13,12 +13,20 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TREE="${1:-$HERE/../android/lineage}"
 CF="$TREE/device/google/cuttlefish"
+MS_SOURCE="$CF/host/commands/modem_simulator"
 
-if [ ! -f "$CF/host/commands/modem_simulator/pdu_parser.cpp" ]; then
-    echo "run-host-tests.sh: Cuttlefish sources not found under $CF" >&2
-    echo "run-host-tests.sh: pass the path to a synced tree, e.g. '$0 android/lineage'" >&2
-    exit 1
+if [ ! -f "$MS_SOURCE/pdu_parser.cpp" ]; then
+    if [ "$#" -gt 0 ]; then
+        echo "run-host-tests.sh: Cuttlefish sources not found under $CF" >&2
+        exit 1
+    fi
+    MS_SOURCE="$HERE/reference/modem_simulator/host/commands/modem_simulator"
+    echo "run-host-tests.sh: using bundled simulator reference sources"
 fi
+
+python3 "$HERE/tests/boot_integration_test.py"
+python3 "$HERE/tests/build_release_test.py"
+python3 "$HERE/tests/upload_gofile_test.py"
 
 CXX="${CXX:-}"
 if [ -z "$CXX" ]; then
@@ -41,12 +49,10 @@ fi
 OUT="$(mktemp -d)"
 trap 'rm -rf "$OUT"' EXIT
 
-# Patch a pristine copy of the simulator sources with the same script sim/apply.sh
-# runs, so the tests exercise the exact code the guest will run (and prove the
-# patch still applies to upstream).
+# The bundled reference is already patched; the patcher accepts both forms.
 SRC="$OUT/src/host/commands/modem_simulator"
 mkdir -p "$SRC"
-cp "$CF"/host/commands/modem_simulator/*.h "$CF"/host/commands/modem_simulator/*.cpp "$SRC/"
+cp "$MS_SOURCE"/*.h "$MS_SOURCE"/*.cpp "$SRC/"
 python3 "$HERE/patch_modem_simulator.py" "$SRC"
 
 echo "run-host-tests.sh: compiler: $CXX"
@@ -59,3 +65,11 @@ echo "run-host-tests.sh: compiler: $CXX"
     "$SRC/pdu_parser.cpp"
 
 "$OUT/pdu_test"
+
+"$CXX" -std=c++20 -Wall -Wextra -O1 \
+    -I "$HERE/overlay/modem_console" \
+    -o "$OUT/modem_console" \
+    "$HERE/overlay/modem_console/modem_console.cpp" \
+    "$HERE/overlay/modem_console/sms_pdu.cpp"
+
+python3 "$HERE/tests/console_transport_test.py" "$OUT/modem_console"

@@ -24,6 +24,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -102,13 +103,14 @@ class Channel {
     addr.sun_family = AF_UNIX;
     addr.sun_path[0] = '\0';  // abstract namespace, like SharedFD::SocketLocalServer
     const size_t namelen = name.size();
-    if (namelen + 2 > sizeof(addr.sun_path)) {
+    if (namelen + 1 > sizeof(addr.sun_path)) {
       *err = "socket name too long";
       Close();
       return false;
     }
     memcpy(addr.sun_path + 1, name.data(), namelen);
-    const socklen_t len = static_cast<socklen_t>(namelen + 2);
+    const socklen_t len =
+        static_cast<socklen_t>(offsetof(sockaddr_un, sun_path) + 1 + namelen);
     if (::connect(fd_, reinterpret_cast<struct sockaddr*>(&addr), len) < 0) {
       *err = "cannot reach the modem simulator (" + name + "): " + strerror(errno) +
              "\nis modem_simulator_virtio running?";

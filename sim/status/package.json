@@ -1,0 +1,12 @@
+{
+  "name": "lutm-build-status",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "python3 -m unittest discover -s . -p 'test_*.py'"
+  },
+  "dependencies": {
+    "@depot/sandbox": "0.1.0-beta.4"
+  }
+}

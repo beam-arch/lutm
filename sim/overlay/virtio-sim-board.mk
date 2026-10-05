@@ -2,6 +2,8 @@
 #
 # Included from device/virt/virtio-common/BoardConfigCommon.mk by sim/apply.sh.
 
+ifneq ($(TARGET_NO_TELEPHONY),true)
+
 # The guest RIL reads the modem simulator port from ro.boot.modem_simulator_ports.
 # modem_simulator.rc binds the same port (9200).
 BOARD_BOOTCONFIG += androidboot.modem_simulator_ports=9200
@@ -14,3 +16,5 @@ BOARD_VENDOR_SEPOLICY_DIRS += \
 
 # Emulation properties.
 TARGET_VENDOR_PROP += device/virt/virtio-common/configs/properties/vendor.sim.prop
+
+endif

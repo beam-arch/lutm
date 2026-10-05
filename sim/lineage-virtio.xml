@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+  <project path="device/virt/virtio_x86_64" name="LineageOS/android_device_virt_virtio_x86_64" />
+  <project path="device/virt/virtio_arm64" name="LineageOS/android_device_virt_virtio_arm64" />
+  <project path="device/virt/virtio_arm64only" name="LineageOS/android_device_virt_virtio_arm64only" />
+  <project path="device/virt/virtio-common" name="LineageOS/android_device_virt_virtio-common" />
+  <project path="device/virt/virt-common" name="LineageOS/android_device_virt_virt-common" />
+  <project path="device/mainline/common" name="LineageOS/android_device_mainline_common" />
+  <project path="external/drm_hwcomposer-upstream" name="LineageOS/android_external_drm_hwcomposer-upstream" />
+  <project path="external/minigbm-upstream" name="LineageOS/android_external_minigbm-upstream" />
+  <project path="external/linux-firmware-mainline" name="LineageOS/android_external_linux-firmware-mainline" />
+  <project path="external/mesa" name="LineageOS/android_external_mesa" />
+  <project path="hardware/mainline/common" name="LineageOS/android_hardware_mainline_common" />
+  <project path="kernel/mainline/configs" name="LineageOS/android_kernel_mainline_configs" />
+  <project path="kernel/virt/virtio" name="LineageOS/android_kernel_virt_virtio" />
+  <project path="prebuilts/bootmgr" name="LineageOS/android_prebuilts_bootmgr" />
+</manifest>

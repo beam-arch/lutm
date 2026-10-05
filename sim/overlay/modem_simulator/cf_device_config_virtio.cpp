@@ -3,7 +3,7 @@
 //
 // Upstream cf_device_config.cpp resolves these paths through CuttlefishConfig,
 // which is host-only. On the guest everything lives under
-// /data/misc/modem_simulator (seeded from /vendor/etc/modem_simulator by
+// /data/vendor/modem_simulator (seeded from /vendor/etc/modem_simulator by
 // init.virtio.sim.rc).
 //
 #include "host/commands/modem_simulator/device_config.h"
@@ -15,7 +15,7 @@ namespace modem {
 
 namespace {
 // Writable, per-device state (SIM profile, nvram).
-constexpr char kModemDataDir[] = "/data/misc/modem_simulator/";
+constexpr char kModemDataDir[] = "/data/vendor/modem_simulator/";
 // Read-only seed config shipped by the build.
 constexpr char kModemEtcDir[] = "/vendor/";
 }  // namespace

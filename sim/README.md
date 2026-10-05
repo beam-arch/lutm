@@ -1,10 +1,10 @@
 # SIM / telephony emulation for LineageOS-on-QEMU (virtio)
 
-This directory adds a **guest-side, self-contained** emulated physical SIM to the
-`virtio_x86_64` / `virtio_arm64only` builds so that Android believes a real
-physical SIM is inserted and brings the full telephony stack up
-(SIM + carrier, voice, SMS, data; IMS/RCS surfaces exist because the HAL
-implements the IMS interfaces).
+This directory adds a **guest-side, self-contained** modem and simulated
+physical SIM to the `virtio_x86_64` / `virtio_arm64only` builds. It is intended
+to expose a UICC and emulated carrier, voice, SMS and data state to Android.
+It does not connect to a real cellular network or provide working carrier
+IMS/RCS merely by implementing radio HAL interfaces.
 
 Nothing is required from the host/QEMU command line and nothing is required from
 UTM: the modem lives entirely inside the guest image.
@@ -44,11 +44,15 @@ vsock **loopback** (`VMADDR_CID_LOCAL`) instead.
 
 ## What `apply.sh` does
 
-Run automatically by `build.sh` right after `repo sync`, before `breakfast`:
+Run `bash /path/to/lutm/sim/apply.sh /path/to/android/lineage` after `repo sync`,
+before `breakfast`. This checkout does not include a top-level `build.sh`.
 
 1. Copies this overlay into `device/virt/virtio-common`:
    - `virtio-sim.mk` / `virtio-sim-board.mk` — product + board config
-   - `configs/init/init.virtio.sim.rc` — seeds `/data/misc/modem_simulator`
+   - `framework-overlay/*` — one physical SIM slot and telephony capability
+     resources, ahead of the inherited LineageOS Wi-Fi-only overlay
+   - `configs/init/init.virtio.sim.rc` — installed at `/vendor/etc/init/` to seed
+     `/data/vendor/modem_simulator`; init does not recursively import `etc/init/hw/`
    - `configs/properties/vendor.sim.prop` — telephony properties
    - `sepolicy/vendor-sim/*` — SELinux for the simulator, plus the
      `ro.boot.modem_simulator_ports` property type the Cuttlefish RIL policy
@@ -63,8 +67,9 @@ Run automatically by `build.sh` right after `repo sync`, before `breakfast`:
 3. Stages the Cuttlefish simulator sources into `modem_simulator/src/`, minus the
    host-only `main.cpp` / `cf_device_config.cpp`. Soong resolves `srcs` relative
    to the `.bp`'s own directory, so they cannot be referenced in place.
-4. Patches that staged copy with `sim/patch_modem_simulator.py` (18 exact-match
+4. Patches that staged copy with `sim/patch_modem_simulator.py` (21 exact-match
    edits; re-applied from pristine sources on every run):
+   - deferred command handling until the SIM/network services are registered;
    - a control-plane broadcast, so a console sees the SMS the device sends and
      the delivery reports that come back;
    - SMS-DELIVER parsing in `PDUParser`, which upstream never needed because a
@@ -79,13 +84,101 @@ Run automatically by `build.sh` right after `repo sync`, before `breakfast`:
    - `AT+REMOTEOPERATOR`, to move the device to another emulated operator.
 5. Rewrites the guest RIL's vsock target from `VMADDR_CID_HOST` to
    `VMADDR_CID_LOCAL` so the RIL talks to the in-guest simulator.
+6. Fixes Lineage's kernel output-prefix rule for the relative `out/non-ab` and
+   `out/ab` directories. Soong rejects absolute paths in some modules, while the
+   kernel's `make -C` needs source-relative paths prefixed by the Android tree.
+
+Missing device/Cuttlefish sources or an unrecognized RIL transport are errors,
+not warnings followed by apparent success. `TARGET_NO_TELEPHONY=true` disables
+both the product packages and the corresponding board configuration.
 
 ## Building the images
 
-Apply the overlay first (`sim/apply.sh`), then build the same targets `build.sh`
-uses:
+### Live build status
+
+The managed Preview runs `sim/status`, a status page that samples Depot every
+45 seconds and shows both layouts, checks, failures, freshness and verified
+download links. It runs independently of chat turns. The Depot key stays on
+the server; it is never sent to the browser. No Convex deployment is required.
+
+Run `npm ci --prefix sim/status` and `npm start --prefix sim/status` outside the
+managed Preview. `BUILD_STATUS_BUILDER_FILE` selects the local Depot builder
+state JSON. Authentication uses `DEPOT_TOKEN`, or a private file selected with
+`DEPOT_TOKEN_FILE` (default `~/.config/hoplite-depot/token`). The default builder
+state is the current thread's ignored dual-layout runtime file.
+
+For a clean Ubuntu build host with the
+[Android build dependencies](https://source.android.com/docs/setup/start/requirements)
+installed, also install `git-lfs`, `pkg-config`, `ninja-build`, `python3-mako`,
+`qemu-utils`, `bc`, `cpio`, `rsync`, `libssl-dev`, `libelf-dev` and `dwarves`. Install the
+official `repo` launcher and configure Git's name/email, then run:
 
 ```shell
+bash sim/build.sh "$HOME/android/lineage" virtio_x86_64
+# or: bash sim/build.sh "$HOME/android/lineage" virtio_arm64only
+# Optional third argument: both (default), non-ab, or ab.
+```
+
+The helper initializes LineageOS 23.2, installs `lineage-virtio.xml` as a local
+manifest for the device dependencies, syncs, applies the overlay, runs the host
+checks, and builds the release artifacts. `SYNC_JOBS` defaults to 8 and `BUILD_JOBS` to
+the host CPU count. Set `SKIP_SYNC=1` only when resuming an already synced build.
+It checks zip integrity and prints SHA-256 hashes, but does not boot the image
+or upload it. These are development builds using the tree's default signing
+keys, not production-signed releases.
+
+### Upstream recovery and partition compatibility
+
+The helper stages **both partition layouts** by default:
+
+| Layout | Recovery | Images in addition to UTM and OTA archives |
+|---|---|---|
+| `non-ab` | Dedicated `recovery` partition, matching upstream | `boot_<arch>-non-ab.img`, `recovery_<arch>-non-ab.img`, `recovery_<arch>-non-ab-userdebug.img` |
+| `ab` | Recovery ramdisk in `vendor_boot` | `boot_<arch>-ab.img`, `vendor_boot_<arch>-ab.img` |
+
+The non-A/B build follows [jqssun/android-lineage-qemu's sequence](https://github.com/jqssun/android-lineage-qemu/blob/main/build.sh):
+`AB_OTA_UPDATER=false`, `userdebug` standalone recovery, then the `user` UTM
+bundle and OTA. The A/B build uses `AB_OTA_UPDATER=true` and `user`. The helper
+checks each layout before compilation and never substitutes a standalone
+recovery image for `vendor_boot`.
+
+Build outputs are isolated in `out/non-ab` and `out/ab` (under `OUT_DIR` when
+set within the Android tree). Absolute paths inside the tree are normalized to
+source-relative paths for Soong. Release files are staged in
+`out/releases/<product>/<layout>/` with
+layout-specific filenames, a `release.json`, a pinned source manifest, and
+`SHA256SUMS`. `<arch>` is `arm64only` or `x86_64`. Choose the non-A/B bundle for
+upstream's `fastboot flash recovery` workflow; choose A/B for an existing A/B VM.
+
+**The SIM archives shared on 20261004 and early 20261005 predate this correction.**
+Their helper omitted the upstream override and used LineageOS's A/B default,
+with recovery inside `vendor_boot` and no separate `recovery` partition. That
+was unintended build drift, not a SIM requirement. The source correction does
+not repartition an existing VM or replace those published archives.
+
+A change of layout needs a fresh matching system disk. Back up the VM and
+its data before replacing it; do not sideload across the two layouts or flash a
+standalone recovery image to an A/B VM's `boot` or `vendor_boot` partition. On a
+matching non-A/B VM, upstream's `fastboot flash recovery` workflow is supported.
+
+To upload the produced archives separately:
+
+```shell
+bash sim/upload-gofile.sh /path/to/out/releases/virtio_arm64only/non-ab/*.zip \
+    /path/to/out/releases/virtio_arm64only/non-ab/*.img
+# Upload the ab/ files separately and retain their layout labels.
+```
+
+The uploader can use `GOFILE_TOKEN` and `GOFILE_FOLDER_ID`; otherwise it creates
+a temporary guest account and a public folder per upload. It checks GoFile's
+reported size and MD5 against each local file before printing a file page and,
+when supplied by the API, its separate folder page. This is metadata verification,
+not a download check. Guest files can expire after ten days of inactivity.
+
+For manual builds, apply the overlay and preserve the same non-A/B configuration:
+
+```shell
+export AB_OTA_UPDATER=false ROOMSERVICE_BRANCHES="lineage-23.1 lineage-23.0"
 breakfast virtio_x86_64 user          # or virtio_arm64only
 m vm-utm-zip otapackage
 ```
@@ -109,31 +202,122 @@ out/target/product/<product>/VirtualMachine/UTM/<name>.utm/Data/{vda.qcow2,vdb.q
 system/vendor/product/system_ext/odm, so it is also where the emulated SIM ends
 up. `vdb.qcow2` is the 16 GiB empty userdata disk.
 
-Run `sim/host-quirks.sh --fix` before the first build — see the environment
+Run `bash sim/host-quirks.sh --fix` before the first build — see the environment
 section below.
 
 ## Boot flow
 
 * `androidboot.modem_simulator_ports=9200` is added to `BOARD_BOOTCONFIG`, so the
   guest RIL reads `ro.boot.modem_simulator_ports=9200`.
-* `modem_simulator` starts in init class `core` and binds a vsock server on port
-  9200; `init.virtio.sim.rc` also starts `vendor.ril-daemon` once the simulator
-  reports `running`.
+* `init.virtio.sim.rc` seeds `/data/vendor/modem_simulator` during `post-fs-data`.
+* The `vendor.modem-simulator` init service starts in class `core` and binds a vsock
+  server on port 9200. It registers all modem services before handling commands.
+  `init.virtio.sim.rc` also starts `vendor.ril-daemon` when the modem process
+  reports `running`; this process state is not a socket-readiness signal.
 * `vendor.ril-daemon` (via `libcuttlefish-ril-2.so`) connects to the simulator
   over vsock loopback and registers the AIDL radio HAL. If it loses the race it
   retries every 10s.
-* Android sees a SIM, a registered network, and a mobile data connection.
+* Expected result: Android sees a SIM, a registered emulated network, and a
+  simulated mobile data connection. This still needs guest-side verification.
 
 ## Verifying at runtime
 
 ```shell
-adb shell getprop ro.boot.modem_simulator_ports        # 9200
-adb shell getprop init.svc.modem-simulator             # running
-adb shell getprop init.svc.vendor.ril-daemon           # running
+adb shell 'cat /proc/bootconfig /proc/cmdline | grep modem_simulator_ports'
+adb shell 'ps -A -Z | grep modem_simulator'
+adb shell 'ps -A -Z | grep libcuttlefish-rild'
 adb shell dumpsys telephony.registry | head
 adb shell service list | grep android.hardware.radio
 adb shell getprop gsm.operator.alpha                   # non-empty
 ```
+
+### If the services or Android tools are missing
+
+The bootconfig or command line must contain `modem_simulator_ports=9200`, but
+that does not prove the modem binary, its init service, or the radio APEX was
+installed or started. On these full-Treble images, SELinux denies `shell` reads
+of `ro.boot.modem_simulator_ports` (a vendor-internal property) and the default
+`init.svc.vendor.*` properties. Blank `getprop` output for those is not evidence
+that the port is missing or the RIL is stopped: use `/proc/bootconfig` and `ps`
+instead. A readable service state of `restarting` does confirm a failing service.
+
+Select the intended ADB transport explicitly (replace the serial as needed):
+
+```shell
+adb -s emulator-5554 shell '
+  echo "PATH=$PATH"
+  for p in ro.bootmode ro.build.fingerprint sys.boot_completed init.svc.zygote \
+      init.svc.modem-simulator init.svc.vendor.modem-simulator \
+      init.svc.vendor.ril-daemon; do
+    printf "%s=" "$p"; /system/bin/getprop "$p"
+  done
+  ls -l /system/bin/dumpsys /system/bin/service /system/bin/modem_console \
+    /vendor/bin/hw/modem_simulator_virtio /vendor/etc/init/modem_simulator.rc \
+    /vendor/etc/init/init.virtio.sim.rc \
+    /apex/com.google.cf.rild/bin/hw/libcuttlefish-rild
+  cat /proc/bootconfig /proc/cmdline | grep modem_simulator_ports
+  ps -A -Z | grep -E "libcuttlefish-rild|modem_simulator"
+'
+```
+
+Missing `dumpsys` and `service` is not a SIM-protocol failure: check for a
+recovery/minimal environment, an unexpected image, or a PATH/access problem.
+If the absolute paths exist, try `/system/bin/dumpsys` and `/system/bin/service`.
+The `emulator-5554` serial alone does not establish which image is running.
+
+The first 20261004 archives shared before the console socket-length fix truncate
+the abstract socket name by one byte. On those images only, compensate with:
+
+```shell
+adb shell modem_console --socket modem_simulator_console_ raw 'AT+CPIN?'
+```
+
+The trailing underscore is intentional. This repairs the diagnostic connection,
+not SIM detection: `+CPIN: READY` shows the simulator loaded its UICC profile,
+but the radio HAL and Android subscription state still need to be checked.
+
+If `modem-simulator` is restarting, collect init, linker and SELinux errors:
+
+```shell
+adb shell 'logcat -b all -d -t 1500 | grep -Ei "modem-simulator|modem_simulator_virtio|libcuttlefish-rild|avc: denied|Fatal signal|CANNOT LINK EXECUTABLE" | tail -80'
+```
+
+The first shared archives routed simulator logs to stderr, which init discards
+for this service. The source now uses Android's default logd logger so socket
+and profile errors appear in logcat. This observability fix does not establish
+the cause of a crash in an older image, or prove that SIM detection works.
+
+Runtime testing of the first x86_64 archive reproduced the modem restart loop:
+SELinux denied `listen` on its VSOCK socket. Adding only `listen` and `accept`
+to the test copy's policy got the modem past that loop with enforcement retained.
+The same run exposed a rejected vendor-init trigger for the unexported
+`init.svc.modem-simulator` property and permission failures seeding `/data/misc`.
+The source now names the service `vendor.modem-simulator` and keeps its state
+under `/data/vendor/modem_simulator` with a vendor data type.
+
+Once the modem was running, the inherited Wi-Fi-only overlay still declared
+zero physical SIM slots. `UiccController` then crashed when the modem reported
+slot 0. The SIM-specific framework overlay now declares one slot and enables
+the voice, SMS and mobile-data capability flags. Its product-overlay path is
+prepended so the Wi-Fi-only values cannot override it.
+
+On a disposable x86_64 copy of the shared archive, the socket-policy repair
+and these resource overrides were boot-tested with SELinux enforcing:
+`AT+CPIN?` returned `READY`, `gsm.sim.state` reached `LOADED`, an active
+subscription appeared, and the phone service stopped crash-looping. This test
+also passed on fresh userdata: Language → Next advanced to Date & time without
+the missing-SIM page. It does not verify a rebuilt ARM64 image or the source's
+service/data-path changes together; the originally shared archives predate
+these repairs.
+
+If only the SIM components are missing, check `get_build_var TARGET_NO_TELEPHONY`
+and `get_build_var PRODUCT_PACKAGES` in the build tree, then rebuild
+`m vm-utm-zip otapackage` and boot the newly generated bundle/disk. Building an
+individual module does not update an already imported UTM VM. If the files are
+present but services fail, inspect init/RIL logs and SELinux denials before
+changing policy. The SIM can fall back to its vendor profile even if the data
+copy is absent, so the former init-path bug alone does not explain every
+"no SIM" report.
 
 ## Driving the emulated network: `modem_console`
 
@@ -213,7 +397,19 @@ same exemption, which is why `modem_simulator.te` mirrors it under
 
 ## Verification status
 
-Verified by real builds against a synced LineageOS 23.2 tree:
+Current host checks: thirteen boot-wiring/application regressions, ten offline
+release-build regressions, nine offline
+upload regressions, 60 PDU checks, and a real-socket console regression covering
+the default, custom and maximum-length abstract socket names
+pass via `bash sim/run-host-tests.sh`, using the bundled reference when no tree
+is supplied. Pass a synced tree explicitly to also check patch compatibility
+against its pristine Cuttlefish sources. These tests do not boot Android or
+compile the full device modem/radio stack.
+
+The original snapshot records the following build-only results against a synced
+LineageOS 23.2 tree. They have **not** been re-run for the startup fixes above;
+the image contents below describe that older baseline, including the unimported
+`/vendor/etc/init/hw/init.virtio.sim.rc`. The fixed path requires a rebuilt image.
 
 | Check | Target | Result |
 |---|---|---|
@@ -302,9 +498,13 @@ which is a repair inside the synced tree); otherwise check them by hand first:
    `apt install coreutils-from-gnu` (or point `/usr/bin/expr` at `/usr/bin/gnuexpr`).
    Check with `get_build_var BOARD_MESA3D_MESON_ARGS` — it must contain
    `-Dmesa-clc=system`.
-2. **`pkg-config` and `ninja` must be installed.** Mesa's meson setup needs both;
+2. **`pkg-config`, `ninja` and Python Mako must be installed.** Mesa's meson
+   setup needs them;
    the failures read `Pkg-config for machine host machine not found` and
-   `Could not detect Ninja v1.8.2 or newer`.
+   `Could not detect Ninja v1.8.2 or newer`, or
+   `Python (3.x) mako module >= 0.8.0 required to build mesa`.
+   Install `pkg-config ninja-build python3-mako` on Ubuntu. The preflight checks
+   these before compilation.
 3. **`prebuilts/bootmgr`'s bundled glibc is broken on modern hosts.**
    `build/tasks/10-bootmgr-defs.mk` runs the prebuilt mtools/xorriso/grub tools
    through the *bundled* loader

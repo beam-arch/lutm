@@ -91,6 +91,7 @@ class ChannelMonitor {
  public:
   ChannelMonitor(ModemSimulator& modem, cuttlefish::SharedFD server);
   ~ChannelMonitor();
+  void Start();
 
   ChannelMonitor(const ChannelMonitor&) = delete;
   ChannelMonitor& operator=(const ChannelMonitor&) = delete;
