@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>LUTM · Live build status</title><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head>
+<body>
+<main>
+  <header><a class="brand" href="/">L<span>↗</span> <b>LUTM</b><small>BUILD MONITOR</small></a><span id="connection" class="pill">CONNECTING</span></header>
+  <section class="hero"><div class="eyebrow">ARM64 RELEASE · TWO PARTITION LAYOUTS</div><h1 id="stage">Connecting to Depot<span class="dots">…</span></h1><p>Real build progress. No chat round-trip needed.</p><div class="facts"><span><b id="cores">32</b> CPU cores</span><span><b id="memory">128</b> GiB memory</span><span>Elapsed <b id="elapsed">—</b></span><span>Updated <b id="updated">—</b></span></div></section>
+  <div id="warning" class="warning" hidden></div>
+  <section id="layouts" class="layouts" aria-label="Release layouts"></section>
+  <section class="activity"><div class="section-heading"><h2>Latest build activity</h2><span>FROM THE BUILDER</span></div><pre id="recent">Waiting for the first live sample…</pre><div id="failure" class="warning" hidden></div></section>
+  <footer><span>Checks Depot every 45 seconds · This page refreshes automatically.</span><span>Keep OTA and recovery images matched to their layout.</span></footer>
+</main>
+</body>
+</html>

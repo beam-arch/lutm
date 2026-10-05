@@ -94,6 +94,19 @@ both the product packages and the corresponding board configuration.
 
 ## Building the images
 
+### Live build status
+
+The managed Preview runs `sim/status`, a status page that samples Depot every
+45 seconds and shows both layouts, checks, failures, freshness and verified
+download links. It runs independently of chat turns. The Depot key stays on
+the server; it is never sent to the browser. No Convex deployment is required.
+
+Run `npm ci --prefix sim/status` and `npm start --prefix sim/status` outside the
+managed Preview. `BUILD_STATUS_BUILDER_FILE` selects the local Depot builder
+state JSON. Authentication uses `DEPOT_TOKEN`, or a private file selected with
+`DEPOT_TOKEN_FILE` (default `~/.config/hoplite-depot/token`). The default builder
+state is the current thread's ignored dual-layout runtime file.
+
 For a clean Ubuntu build host with the
 [Android build dependencies](https://source.android.com/docs/setup/start/requirements)
 installed, also install `git-lfs`, `pkg-config`, `ninja-build`, `python3-mako`,
