@@ -100,6 +100,7 @@ official `repo` launcher and configure Git's name/email, then run:
 ```shell
 bash sim/build.sh "$HOME/android/lineage" virtio_x86_64
 # or: bash sim/build.sh "$HOME/android/lineage" virtio_arm64only
+# Optional third argument: both (default), non-ab, or ab.
 ```
 
 The helper initializes LineageOS 23.2, installs `lineage-virtio.xml` as a local
@@ -112,12 +113,24 @@ keys, not production-signed releases.
 
 ### Upstream recovery and partition compatibility
 
-The helper follows [jqssun/android-lineage-qemu's build sequence](https://github.com/jqssun/android-lineage-qemu/blob/main/build.sh):
-`AB_OTA_UPDATER=false`, a `userdebug` standalone recovery build, then the `user`
-UTM bundle and OTA. It rejects an unexpected A/B or recovery-less board before
-compilation. In addition to the archives, `PRODUCT_OUT` contains
-`boot_<arch>.img`, `recovery_<arch>.img`, and `recovery_<arch>-userdebug.img`,
-where `<arch>` is `arm64only` or `x86_64`.
+The helper stages **both partition layouts** by default:
+
+| Layout | Recovery | Images in addition to UTM and OTA archives |
+|---|---|---|
+| `non-ab` | Dedicated `recovery` partition, matching upstream | `boot_<arch>-non-ab.img`, `recovery_<arch>-non-ab.img`, `recovery_<arch>-non-ab-userdebug.img` |
+| `ab` | Recovery ramdisk in `vendor_boot` | `boot_<arch>-ab.img`, `vendor_boot_<arch>-ab.img` |
+
+The non-A/B build follows [jqssun/android-lineage-qemu's sequence](https://github.com/jqssun/android-lineage-qemu/blob/main/build.sh):
+`AB_OTA_UPDATER=false`, `userdebug` standalone recovery, then the `user` UTM
+bundle and OTA. The A/B build uses `AB_OTA_UPDATER=true` and `user`. The helper
+checks each layout before compilation and never substitutes a standalone
+recovery image for `vendor_boot`.
+
+Build outputs are isolated in `out/non-ab` and `out/ab` (under `OUT_DIR` when
+set). Release files are staged in `out/releases/<product>/<layout>/` with
+layout-specific filenames, a `release.json`, a pinned source manifest, and
+`SHA256SUMS`. `<arch>` is `arm64only` or `x86_64`. Choose the non-A/B bundle for
+upstream's `fastboot flash recovery` workflow; choose A/B for an existing A/B VM.
 
 **The SIM archives shared on 20261004 and early 20261005 predate this correction.**
 Their helper omitted the upstream override and used LineageOS's A/B default,
@@ -125,7 +138,7 @@ with recovery inside `vendor_boot` and no separate `recovery` partition. That
 was unintended build drift, not a SIM requirement. The source correction does
 not repartition an existing VM or replace those published archives.
 
-A rebuilt non-A/B bundle needs a fresh matching system disk. Back up the VM and
+A change of layout needs a fresh matching system disk. Back up the VM and
 its data before replacing it; do not sideload across the two layouts or flash a
 standalone recovery image to an A/B VM's `boot` or `vendor_boot` partition. On a
 matching non-A/B VM, upstream's `fastboot flash recovery` workflow is supported.
@@ -133,8 +146,9 @@ matching non-A/B VM, upstream's `fastboot flash recovery` workflow is supported.
 To upload the produced archives separately:
 
 ```shell
-bash sim/upload-gofile.sh /path/to/UTM-VM-*.zip /path/to/*-ota.zip \
-    /path/to/boot_arm64only.img /path/to/recovery_arm64only*.img
+bash sim/upload-gofile.sh /path/to/out/releases/virtio_arm64only/non-ab/*.zip \
+    /path/to/out/releases/virtio_arm64only/non-ab/*.img
+# Upload the ab/ files separately and retain their layout labels.
 ```
 
 The uploader can use `GOFILE_TOKEN` and `GOFILE_FOLDER_ID`; otherwise it creates
@@ -365,7 +379,7 @@ same exemption, which is why `modem_simulator.te` mirrors it under
 
 ## Verification status
 
-Current host checks: twelve boot-wiring/application regressions, four offline
+Current host checks: twelve boot-wiring/application regressions, eight offline
 release-build regressions, nine offline
 upload regressions, 60 PDU checks, and a real-socket console regression covering
 the default, custom and maximum-length abstract socket names
