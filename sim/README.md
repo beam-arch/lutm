@@ -104,16 +104,37 @@ bash sim/build.sh "$HOME/android/lineage" virtio_x86_64
 
 The helper initializes LineageOS 23.2, installs `lineage-virtio.xml` as a local
 manifest for the device dependencies, syncs, applies the overlay, runs the host
-checks, and builds both archives. `SYNC_JOBS` defaults to 8 and `BUILD_JOBS` to
+checks, and builds the release artifacts. `SYNC_JOBS` defaults to 8 and `BUILD_JOBS` to
 the host CPU count. Set `SKIP_SYNC=1` only when resuming an already synced build.
 It checks zip integrity and prints SHA-256 hashes, but does not boot the image
 or upload it. These are development builds using the tree's default signing
 keys, not production-signed releases.
 
+### Upstream recovery and partition compatibility
+
+The helper follows [jqssun/android-lineage-qemu's build sequence](https://github.com/jqssun/android-lineage-qemu/blob/main/build.sh):
+`AB_OTA_UPDATER=false`, a `userdebug` standalone recovery build, then the `user`
+UTM bundle and OTA. It rejects an unexpected A/B or recovery-less board before
+compilation. In addition to the archives, `PRODUCT_OUT` contains
+`boot_<arch>.img`, `recovery_<arch>.img`, and `recovery_<arch>-userdebug.img`,
+where `<arch>` is `arm64only` or `x86_64`.
+
+**The SIM archives shared on 20261004 and early 20261005 predate this correction.**
+Their helper omitted the upstream override and used LineageOS's A/B default,
+with recovery inside `vendor_boot` and no separate `recovery` partition. That
+was unintended build drift, not a SIM requirement. The source correction does
+not repartition an existing VM or replace those published archives.
+
+A rebuilt non-A/B bundle needs a fresh matching system disk. Back up the VM and
+its data before replacing it; do not sideload across the two layouts or flash a
+standalone recovery image to an A/B VM's `boot` or `vendor_boot` partition. On a
+matching non-A/B VM, upstream's `fastboot flash recovery` workflow is supported.
+
 To upload the produced archives separately:
 
 ```shell
-bash sim/upload-gofile.sh /path/to/UTM-VM-*.zip /path/to/*-ota.zip
+bash sim/upload-gofile.sh /path/to/UTM-VM-*.zip /path/to/*-ota.zip \
+    /path/to/boot_arm64only.img /path/to/recovery_arm64only*.img
 ```
 
 The uploader can use `GOFILE_TOKEN` and `GOFILE_FOLDER_ID`; otherwise it creates
@@ -122,9 +143,10 @@ reported size and MD5 against each local file before printing a file page and,
 when supplied by the API, its separate folder page. This is metadata verification,
 not a download check. Guest files can expire after ten days of inactivity.
 
-Apply the overlay first, then build both the bootable UTM bundle and OTA:
+For manual builds, apply the overlay and preserve the same non-A/B configuration:
 
 ```shell
+export AB_OTA_UPDATER=false ROOMSERVICE_BRANCHES="lineage-23.1 lineage-23.0"
 breakfast virtio_x86_64 user          # or virtio_arm64only
 m vm-utm-zip otapackage
 ```
@@ -343,7 +365,8 @@ same exemption, which is why `modem_simulator.te` mirrors it under
 
 ## Verification status
 
-Current host checks: twelve boot-wiring/application regressions, nine offline
+Current host checks: twelve boot-wiring/application regressions, four offline
+release-build regressions, nine offline
 upload regressions, 60 PDU checks, and a real-socket console regression covering
 the default, custom and maximum-length abstract socket names
 pass via `bash sim/run-host-tests.sh`, using the bundled reference when no tree
