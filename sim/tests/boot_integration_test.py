@@ -155,6 +155,15 @@ class ApplyTest(unittest.TestCase):
         self.ril = cuttlefish / "guest/hals/ril/reference-ril/reference-ril.c"
         self.ril.parent.mkdir(parents=True)
         self.ril.write_text("sa.svm_cid = VMADDR_CID_HOST;\n")
+        self.kernel_config = self.tree / "vendor/lineage/config/BoardConfigKernel.mk"
+        self.kernel_config.parent.mkdir(parents=True)
+        self.kernel_config.write_text(
+            "OUT_DIR_PREFIX := $(OUT_DIR)\n"
+            "KERNEL_BUILD_OUT_PREFIX :=\n"
+            "ifeq ($(OUT_DIR_PREFIX),out)\n"
+            "    KERNEL_BUILD_OUT_PREFIX := $(BUILD_TOP)/\n"
+            "endif\n"
+        )
 
     def apply(self):
         return subprocess.run(
@@ -201,6 +210,23 @@ class ApplyTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("unsupported guest RIL transport", result.stderr)
         self.assertEqual(self.snapshot(), snapshot)
+
+    def test_kernel_output_prefix_handles_relative_layout_directories(self):
+        result = self.apply()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for directory, expected in (
+            ("out/non-ab", str(self.tree) + "/"),
+            ("out/ab", str(self.tree) + "/"),
+            ("/tmp/absolute-output", ""),
+        ):
+            with self.subTest(output=directory):
+                output = subprocess.check_output(
+                    ["make", "--no-print-directory", "-f", str(self.kernel_config),
+                     f"OUT_DIR={directory}", f"BUILD_TOP={self.tree}",
+                     "--eval", "print:;@printf '%s' '$(KERNEL_BUILD_OUT_PREFIX)'", "print"],
+                    text=True,
+                )
+                self.assertEqual(output, expected)
 
 
 if __name__ == "__main__":

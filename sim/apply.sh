@@ -15,6 +15,7 @@ OVERLAY="$HERE/overlay"
 DEVICE="$TREE/device/virt/virtio-common"
 CF_MS="$TREE/device/google/cuttlefish/host/commands/modem_simulator"
 RIL="$TREE/device/google/cuttlefish/guest/hals/ril/reference-ril/reference-ril.c"
+KERNEL_CONFIG="$TREE/vendor/lineage/config/BoardConfigKernel.mk"
 if [ ! -d "$DEVICE" ]; then
     echo "apply.sh: device tree not found at $DEVICE" >&2
     echo "apply.sh: run this after 'repo sync', e.g. '$0 android/lineage'" >&2
@@ -22,7 +23,7 @@ if [ ! -d "$DEVICE" ]; then
 fi
 
 for required in "$DEVICE/device-common.mk" "$DEVICE/BoardConfigCommon.mk" \
-    "$CF_MS/pdu_parser.cpp" "$RIL"; do
+    "$CF_MS/pdu_parser.cpp" "$RIL" "$KERNEL_CONFIG"; do
     if [ ! -f "$required" ]; then
         echo "apply.sh: required source not found: $required" >&2
         echo "apply.sh: sync the complete LineageOS tree before applying the overlay" >&2
@@ -33,6 +34,27 @@ if ! grep -Eq 'VMADDR_CID_(HOST|LOCAL)' "$RIL"; then
     echo "apply.sh: unsupported guest RIL transport in $RIL; expected a VSOCK CID" >&2
     exit 1
 fi
+
+# Lineage's kernel make rules otherwise treat custom relative outputs as absolute.
+python3 - "$KERNEL_CONFIG" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+old = """KERNEL_BUILD_OUT_PREFIX :=
+ifeq ($(OUT_DIR_PREFIX),out)
+    KERNEL_BUILD_OUT_PREFIX := $(BUILD_TOP)/
+endif"""
+new = old.replace('ifeq ($(OUT_DIR_PREFIX),out)', 'ifeq ($(filter /%,$(OUT_DIR_PREFIX)),)')
+text = path.read_text()
+if new in text:
+    print('apply.sh: kernel output-prefix compatibility patch already applied')
+elif text.count(old) == 1:
+    path.write_text(text.replace(old, new))
+    print('apply.sh: patched kernel rules for source-relative layout output directories')
+else:
+    raise SystemExit('apply.sh: unsupported Lineage kernel output-prefix rules')
+PY
 
 echo "apply.sh: installing overlay into $DEVICE"
 cp -r "$OVERLAY/." "$DEVICE/"

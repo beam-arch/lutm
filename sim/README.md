@@ -84,6 +84,9 @@ before `breakfast`. This checkout does not include a top-level `build.sh`.
    - `AT+REMOTEOPERATOR`, to move the device to another emulated operator.
 5. Rewrites the guest RIL's vsock target from `VMADDR_CID_HOST` to
    `VMADDR_CID_LOCAL` so the RIL talks to the in-guest simulator.
+6. Fixes Lineage's kernel output-prefix rule for the relative `out/non-ab` and
+   `out/ab` directories. Soong rejects absolute paths in some modules, while the
+   kernel's `make -C` needs source-relative paths prefixed by the Android tree.
 
 Missing device/Cuttlefish sources or an unrecognized RIL transport are errors,
 not warnings followed by apparent success. `TARGET_NO_TELEPHONY=true` disables
@@ -381,7 +384,7 @@ same exemption, which is why `modem_simulator.te` mirrors it under
 
 ## Verification status
 
-Current host checks: twelve boot-wiring/application regressions, ten offline
+Current host checks: thirteen boot-wiring/application regressions, ten offline
 release-build regressions, nine offline
 upload regressions, 60 PDU checks, and a real-socket console regression covering
 the default, custom and maximum-length abstract socket names
