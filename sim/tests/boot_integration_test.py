@@ -130,9 +130,11 @@ class BootWiringTest(unittest.TestCase):
         self.assertIn(f'kModemDataDir[] = "{directory}/"', config)
         self.assertIn(f"{directory}(/.*)?", labels)
         self.assertIn(
-            "type modem_simulator_data_file, file_type, data_file_type, vendor_data_file_type;",
+            "type modem_simulator_data_file, file_type, data_file_type;",
             types,
         )
+        self.assertNotIn("vendor_data_file_type", types)
+        self.assertNotIn("core_data_file_type", types)
         self.assertIn("allow modem_simulator vendor_data_file:dir search;", policy)
 
 
