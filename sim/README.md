@@ -127,7 +127,9 @@ checks each layout before compilation and never substitutes a standalone
 recovery image for `vendor_boot`.
 
 Build outputs are isolated in `out/non-ab` and `out/ab` (under `OUT_DIR` when
-set). Release files are staged in `out/releases/<product>/<layout>/` with
+set within the Android tree). Absolute paths inside the tree are normalized to
+source-relative paths for Soong. Release files are staged in
+`out/releases/<product>/<layout>/` with
 layout-specific filenames, a `release.json`, a pinned source manifest, and
 `SHA256SUMS`. `<arch>` is `arm64only` or `x86_64`. Choose the non-A/B bundle for
 upstream's `fastboot flash recovery` workflow; choose A/B for an existing A/B VM.
@@ -379,7 +381,7 @@ same exemption, which is why `modem_simulator.te` mirrors it under
 
 ## Verification status
 
-Current host checks: twelve boot-wiring/application regressions, eight offline
+Current host checks: twelve boot-wiring/application regressions, ten offline
 release-build regressions, nine offline
 upload regressions, 60 PDU checks, and a real-socket console regression covering
 the default, custom and maximum-length abstract socket names

@@ -39,10 +39,17 @@ bash "$HERE/apply.sh" "$PWD"
 bash "$HERE/host-quirks.sh" --fix "$PWD"
 bash "$HERE/run-host-tests.sh" "$PWD"
 
-OUTPUT_ROOT="${OUT_DIR:-out}"
-if [[ "$OUTPUT_ROOT" != /* ]]; then
-    OUTPUT_ROOT="$PWD/$OUTPUT_ROOT"
-fi
+# Some Soong modules require output paths relative to the Android tree.
+OUTPUT_ROOT="$(python3 - "${OUT_DIR:-out}" <<'PY'
+import os
+import sys
+
+directory = os.path.relpath(os.path.abspath(sys.argv[1]))
+if directory == os.pardir or directory.startswith(os.pardir + os.sep):
+    raise SystemExit('build.sh: OUT_DIR must be inside the Android source tree')
+print(directory)
+PY
+)"
 RELEASE_ROOT="$OUTPUT_ROOT/releases/$PRODUCT"
 IMAGE_ARCH="${PRODUCT#virtio_}"
 

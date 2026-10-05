@@ -40,6 +40,8 @@ if operation == "repo":
     elif args[0] == "manifest":
         Path(args[args.index("-o") + 1]).write_text("<manifest/>\n")
 elif operation == "build":
+    if Path(os.environ["OUT_DIR"]).is_absolute():
+        raise SystemExit("Soong requires a source-relative OUT_DIR")
     output = Path(os.environ["OUT_DIR"]) / "target/product" / os.environ["TARGET_PRODUCT"]
     output.mkdir(parents=True, exist_ok=True)
     variant = os.environ["TARGET_BUILD_VARIANT"]
@@ -142,6 +144,7 @@ class BuildReleaseTest(unittest.TestCase):
         self.assertEqual([item["ab"] for item in variants], ["false", "false", "true"])
         self.assertEqual(variants[0]["out_dir"], variants[1]["out_dir"])
         self.assertNotEqual(variants[1]["out_dir"], variants[2]["out_dir"])
+        self.assertEqual([item["out_dir"] for item in variants], ["out/non-ab", "out/non-ab", "out/ab"])
         self.assertTrue(
             all(item["branches"] == "lineage-23.1 lineage-23.0" for item in variants)
         )
@@ -155,9 +158,9 @@ class BuildReleaseTest(unittest.TestCase):
         ab = self.check_release("virtio_arm64only", "ab", result.stdout)
         self.assertTrue(set(non_ab["artifacts"]).isdisjoint(ab["artifacts"]))
 
-    def check_release(self, product, layout, stdout):
+    def check_release(self, product, layout, stdout, output_root=None):
         architecture = product.removeprefix("virtio_")
-        output = self.tree / "out/releases" / product / layout
+        output = (output_root or self.tree / "out") / "releases" / product / layout
         images = {f"boot_{architecture}-{layout}.img": f"{layout} user boot"}
         if layout == "non-ab":
             images.update({
@@ -231,6 +234,20 @@ class BuildReleaseTest(unittest.TestCase):
         for layout in ("non-ab", "ab"):
             metadata = self.check_release("virtio_arm64only", layout, result.stdout)
             self.assertFalse(any("previous" in name for name in metadata["artifacts"]))
+
+    def test_absolute_output_root_inside_tree_becomes_source_relative(self):
+        output = self.tree / "custom-output"
+        result = self.build(layout="ab", OUT_DIR=str(output))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.check_release("virtio_arm64only", "ab", result.stdout, output)
+        variants = [item for item in self.commands() if item["operation"] == "breakfast"]
+        self.assertEqual([item["out_dir"] for item in variants], ["custom-output/ab"])
+
+    def test_output_root_outside_tree_fails_before_compilation(self):
+        result = self.build(OUT_DIR=str(self.root / "outside"))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("OUT_DIR must be inside the Android source tree", result.stderr)
+        self.assertFalse(any(item["operation"] == "build" for item in self.commands()))
 
 
 if __name__ == "__main__":
